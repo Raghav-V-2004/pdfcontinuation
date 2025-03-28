@@ -1,9 +1,3 @@
-#AI Chatbot Assignment- Quicksell (AI Engineer)
-
-#Name: Shubham Jadhav (IIT ROORKEE)
-#Enrolment Number: 20410013
-
-
 import streamlit as st
 import os
 from langchain_groq import ChatGroq
@@ -17,14 +11,67 @@ from langchain_community.document_loaders import PyPDFLoader
 from dotenv import load_dotenv
 import tempfile
 
+# Load environment variables
 load_dotenv()
-
 groq_api_key = os.getenv('GROQ_API_KEY')
 
-st.markdown("<h2 style='text-align: center;'>AI Chatbot Assignment-Quicksell:By Shubham Jadhav(IIT ROORKEE ,20410013) </h2>", unsafe_allow_html=True)
+# Streamlit Page Configuration and Custom CSS for Styling
+st.set_page_config(page_title="AI Chatbot", layout="wide")
+st.markdown(
+    """
+    <style>
+        body {
+            background-color: #f9f9f9;
+            color: #333;
+        }
+        .chat-bubble {
+            padding: 10px 15px;
+            margin: 10px 0;
+            border-radius: 20px;
+            max-width: 80%;
+        }
+        .user-bubble {
+            background-color: #2E8B57;
+            color: white;
+            text-align: right;
+            margin-left: auto;
+        }
+        .ai-bubble {
+            background-color: #e0e0e0;
+            color: #333;
+        }
+        .chat-box {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        h2 {
+            text-align: center;
+            color: #0078D4;
+        }
+        .submit-button {
+            background-color: #0078D4;
+            color: white;
+            border-radius: 20px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .submit-button:hover {
+            background-color: #0056A6;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
+# Initialize ChatGroq model
 llm = ChatGroq(groq_api_key=groq_api_key, model_name="Llama3-8b-8192")
 
+# Define the LLM prompt template
 prompt = ChatPromptTemplate.from_template(
     """
     Answer the questions based on the provided context only.
@@ -36,17 +83,12 @@ prompt = ChatPromptTemplate.from_template(
     """
 )
 
+# Check if the response is irrelevant
 def is_out_of_context(answer):
-    # Define criteria for determining if the answer is out of context
-    out_of_context_keywords = ["I don’t know", "not sure", "out of context", "invalid","There is no mention"," no mention"]
-    
-    # Check if any keyword is in the answer
-    for keyword in out_of_context_keywords:
-        if keyword in answer.lower():
-            return True
-    
-    return False
+    out_of_context_keywords = ["I don’t know", "not sure", "out of context", "invalid", "There is no mention", "no mention"]
+    return any(keyword in answer.lower() for keyword in out_of_context_keywords)
 
+# Create vector database from uploaded PDF
 def create_vector_db_out_of_the_uploaded_pdf_file(pdf_file):
     if "vector_store" not in st.session_state:
         with tempfile.NamedTemporaryFile(delete=False) as temp_file:
@@ -62,31 +104,51 @@ def create_vector_db_out_of_the_uploaded_pdf_file(pdf_file):
         st.session_state.final_document_chunks = st.session_state.text_splitter.split_documents(st.session_state.text_document_from_pdf)
         st.session_state.vector_store = FAISS.from_documents(st.session_state.final_document_chunks, st.session_state.embeddings)
 
+# Handle PDF upload
 pdf_input_from_user = st.file_uploader("Please Upload your PDF file", type=['pdf'])
 
 if pdf_input_from_user is not None:
-    if st.button("Create your vector database"):
+    if st.button("Create Vector Database", key="vector_btn"):
         create_vector_db_out_of_the_uploaded_pdf_file(pdf_input_from_user)
-        st.success("PDF file is ready and we are good to go!")
+        st.success("PDF file is processed and vector database created!")
 
+# Initialize chat history in session state
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []  # List of (user_input, ai_response)
+
+# Chat Interface - Main Section
 if "vector_store" in st.session_state:
-    user_prompt = st.text_input("Enter Your Question for uploaded PDF")
+    st.markdown("<h2>Chat with the PDF</h2>", unsafe_allow_html=True)
 
-    if st.button('Submit Prompt'):
+    # Display chat history in a styled chat box
+    chat_container = st.container()
+    with chat_container:
+        st.markdown("<div class='chat-box'>", unsafe_allow_html=True)
+        for user_input, ai_response in st.session_state.chat_history:
+            st.markdown(f"<div class='chat-bubble user-bubble'>{user_input}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='chat-bubble ai-bubble'>{ai_response}</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # Input box for user question
+    user_prompt = st.text_input("Enter Your Question for the uploaded PDF")
+
+    if st.button('Submit Prompt', key="submit_btn"):
         if user_prompt:
-            if "vector_store" in st.session_state:
-                document_chain = create_stuff_documents_chain(llm, prompt)
-                retriever = st.session_state.vector_store.as_retriever()
-                retrieval_chain = create_retrieval_chain(retriever, document_chain)
+            document_chain = create_stuff_documents_chain(llm, prompt)
+            retriever = st.session_state.vector_store.as_retriever()
+            retrieval_chain = create_retrieval_chain(retriever, document_chain)
 
-                response = retrieval_chain.invoke({'input': user_prompt})
+            response = retrieval_chain.invoke({'input': user_prompt})
 
-                # Check if the response is relevant or not
-                if is_out_of_context(response['answer']):
-                    st.write("Sorry, I didn’t understand your question. Do you want to connect with a live agent?")
-                else:
-                    st.write(response['answer'])
+            if is_out_of_context(response['answer']):
+                ai_response = "Sorry, I didn’t understand your question. Do you want to connect with a live agent?"
             else:
-                st.write("Please upload the PDF first and create embeddings")
+                ai_response = response['answer']
+
+            # Update session state with the latest chat interaction
+            st.session_state.chat_history.append((user_prompt, ai_response))
+
+            # Re-render the page to display updated chat history
+            st.experimental_rerun()
         else:
-            st.error('Please write your prompt')
+            st.error('Please write your prompt.')
